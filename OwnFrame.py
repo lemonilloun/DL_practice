@@ -253,6 +253,13 @@ class Tensor (object):
 
         return Tensor(loss)
 
+    def softmax(self):
+        temp = np.exp(self.data)
+        softmax_output = temp / np.sum(temp,
+                                       axis=len(self.data.shape)-1,
+                                       keepdims=True)
+        return softmax_output
+
     def __repr__(self):
         return str(self.data.__repr__())
 
