@@ -44,6 +44,12 @@ class Tensor (object):
                 # или ожидания градиента,
                 # в последнем случае нужно уменьшить счетчик
                 if self.children[grad_origin.id] == 0:
+                    return
+                    print(self.id)
+                    print(self.creation_op)
+                    print(len(self.creators))
+                    for c in self.creators:
+                        print(c.creation_op)
                     raise Exception("cannot backprop more than once")
                 else:
                     self.children[grad_origin.id] -= 1
@@ -435,6 +441,7 @@ class LSTMCell(Layer):
         self.parameters += self.xi.get_parameters()
         self.parameters += self.xo.get_parameters()
         self.parameters += self.xc.get_parameters()
+
         self.parameters += self.hf.get_parameters()
         self.parameters += self.hi.get_parameters()
         self.parameters += self.ho.get_parameters()
@@ -444,7 +451,8 @@ class LSTMCell(Layer):
 
     def forward(self, input, hidden):
 
-        prev_hidden, prev_cell = hidden[0], hidden[1]
+        prev_hidden = hidden[0]
+        prev_cell = hidden[1]
 
         # вентили
         forget = (self.xf.forward(input) + self.hf.forward(prev_hidden)).sigmoid()
@@ -464,10 +472,8 @@ class LSTMCell(Layer):
         return output, (hidden, cell)
 
     def init_hidden(self, batch_size = 1):
-        hidden = Tensor(np.zeros((batch_size, self.n_hidden)), autograd=True)
-        cell = Tensor(np.zeros((batch_size, self.n_hidden)), autograd=True)
-
-        hidden.data[:, 0] += 1
-        cell.data[:, 0] += 1
-
-        return hidden, cell
+        init_hidden = Tensor(np.zeros((batch_size,self.n_hidden)), autograd=True)
+        init_cell = Tensor(np.zeros((batch_size,self.n_hidden)), autograd=True)
+        init_hidden.data[:,0] += 1
+        init_cell.data[:,0] += 1
+        return (init_hidden, init_cell)
