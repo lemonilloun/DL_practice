@@ -450,7 +450,7 @@ class LSTMCell(Layer):
         forget = (self.xf.forward(input) + self.hf.forward(prev_hidden)).sigmoid()
         inp = (self.xi.forward(input) + self.hi.forward(prev_hidden)).sigmoid()
         outp = (self.xo.forward(input) + self.ho.forward(prev_hidden)).sigmoid()
-        update = (self.xc.forward(input) + self.hc.forward(prev_hidden)).sigmoid()
+        update = (self.xc.forward(input) + self.hc.forward(prev_hidden)).tanh()
 
         # сумма предыдущего значения prev_cell и приращения uddate
         # контролируемые взвешенными весами forget и inp
@@ -463,3 +463,11 @@ class LSTMCell(Layer):
 
         return output, (hidden, cell)
 
+    def init_hidden(self, batch_size = 1):
+        hidden = Tensor(np.zeros((batch_size, self.n_hidden)), autograd=True)
+        cell = Tensor(np.zeros((batch_size, self.n_hidden)), autograd=True)
+
+        hidden.data[:, 0] += 1
+        cell.data[:, 0] += 1
+
+        return hidden, cell
