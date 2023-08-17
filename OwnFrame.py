@@ -292,7 +292,7 @@ class Layer (object):
 
 class Linear(Layer):
 
-    def __init__(self, n_inputs, n_outputs):
+    def __init__(self, n_inputs, n_outputs, bias=True):
         super().__init__()
         W = np.random.randn(n_inputs, n_outputs) * np.sqrt(2.0 / n_inputs)
         self.weight = Tensor(W, autograd=True)
@@ -403,4 +403,63 @@ class RNNCell(Layer):
 
     def init_hidden(self, batch_size):
         return Tensor(np.zeros((batch_size, self.n_hidden)), autograd=True)
+
+# слой долгой краткосрочной памяти
+class LSTMCell(Layer):
+
+    def __init__(self, n_inputs, n_hidden, n_output):
+        super().__init__()
+
+        self.n_inputs = n_inputs
+        self.n_hidden = n_hidden
+        self.n_output = n_output
+
+        # собственные весовые матрицы для вентилей
+
+        # входные весовые матрицы
+        self.xf = Linear(n_inputs, n_hidden)
+        self.xi = Linear(n_inputs, n_hidden)
+        self.xo = Linear(n_inputs, n_hidden)
+        self.xc = Linear(n_inputs, n_hidden)
+
+        # скрытые весовые матрицы
+        self.hf = Linear(n_hidden, n_hidden, bias=False)
+        self.hi = Linear(n_hidden, n_hidden, bias=False)
+        self.ho = Linear(n_hidden, n_hidden, bias=False)
+        self.hc = Linear(n_hidden, n_hidden, bias=False)
+
+        # выходная матрица весов
+        self.w_ho = Linear(n_hidden, n_output, bias=False)
+
+        self.parameters += self.xf.get_parameters()
+        self.parameters += self.xi.get_parameters()
+        self.parameters += self.xo.get_parameters()
+        self.parameters += self.xc.get_parameters()
+        self.parameters += self.hf.get_parameters()
+        self.parameters += self.hi.get_parameters()
+        self.parameters += self.ho.get_parameters()
+        self.parameters += self.hc.get_parameters()
+
+        self.parameters += self.w_ho.get_parameters()
+
+    def forward(self, input, hidden):
+
+        prev_hidden, prev_cell = hidden[0], hidden[1]
+
+        # вентили
+        forget = (self.xf.forward(input) + self.hf.forward(prev_hidden)).sigmoid()
+        inp = (self.xi.forward(input) + self.hi.forward(prev_hidden)).sigmoid()
+        outp = (self.xo.forward(input) + self.ho.forward(prev_hidden)).sigmoid()
+        update = (self.xc.forward(input) + self.hc.forward(prev_hidden)).sigmoid()
+
+        # сумма предыдущего значения prev_cell и приращения uddate
+        # контролируемые взвешенными весами forget и inp
+        cell = (forget * prev_cell) + (inp * update)
+
+        # замаскированная версия ячейки cell
+        hidden = outp * cell.tanh()
+
+        output = self.w_ho.forward(hidden)
+
+        return output, (hidden, cell)
 
