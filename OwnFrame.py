@@ -1,27 +1,29 @@
 import numpy as np
 
-class Tensor (object):
+
+class Tensor(object):
 
     def __init__(self, data, autograd=False, creators=None, creation_op=None, id=None):
         self.data = np.array(data)
-        self.creation_op = creation_op
-        self.creators = creators
-        self.grad = None
         self.autograd = autograd
-        self.children = {}
+        self.grad = None
+
         if id is None:
-            self.id = np.random.randint(0, 100000)
+            self.id = np.random.randint(0, 1000000000)
         else:
             self.id = id
 
+        self.creators = creators
+        self.creation_op = creation_op
+        self.children = {}
+
         # скорректировать число потомков данного тензора
-        if creators is not None:
+        if (creators is not None):
             for c in creators:
                 if self.id not in c.children:
                     c.children[self.id] = 1
                 else:
                     c.children[self.id] += 1
-
 
     # проверить, получил ли тензор градиенты для всех потомков
     def all_children_grads_accounted_for(self):
@@ -30,8 +32,7 @@ class Tensor (object):
                 return False
         return True
 
-
-    #вычисление обратного распространения
+    # вычисление обратного распространения
     def backward(self, grad=None, grad_origin=None):
         if self.autograd:
 
@@ -55,27 +56,25 @@ class Tensor (object):
                     self.children[grad_origin.id] -= 1
 
             # накопление градиентов от нескольких потомков
-            if self.grad  is None:
+            if self.grad is None:
                 self.grad = grad
             else:
                 self.grad += grad
 
             assert grad.autograd == False
 
-            if (self.creators is not None) and (self.all_children_grads_accounted_for() or grad_origin is None):
+            if self.creators is not None and (self.all_children_grads_accounted_for() or grad_origin is None):
 
                 if self.creation_op == 'add':
                     self.creators[0].backward(self.grad, self)
-                    self.creators[1].backward(self.grad, self) # начало обратного распространения
+                    self.creators[1].backward(self.grad, self)  # начало обратного распространения
 
                 if self.creation_op == "neg":
                     self.creators[0].backward(self.grad.__neg__())
 
                 if self.creation_op == "sub":
-                    new = Tensor(self.grad.data)
-                    self.creators[0].backward(new, self)
-                    new = Tensor(self.grad.__neg__().data)
-                    self.creators[1].backward(new, self)
+                    self.creators[0].backward(Tensor(self.grad.data), self)
+                    self.creators[1].backward(Tensor(self.grad.__neg__().data), self)
 
                 if self.creation_op == "mul":
                     new = self.grad * self.creators[1]
@@ -84,8 +83,8 @@ class Tensor (object):
                     self.creators[1].backward(new, self)
 
                 if self.creation_op == "mm":
-                    act = self.creators[0] # обычно слой активации
-                    weights = self.creators[1] # обычно весовая матрица
+                    act = self.creators[0]  # обычно слой активации
+                    weights = self.creators[1]  # обычно весовая матрица
                     new = self.grad.mm(weights.transpose())
                     act.backward(new)
                     new = self.grad.transpose().mm(act).transpose()
@@ -96,8 +95,7 @@ class Tensor (object):
 
                 if "sum" in self.creation_op:
                     dim = int(self.creation_op.split("_")[1])
-                    ds = self.creators[0].data.shape[dim]
-                    self.creators[0].backward(self.grad.expand(dim, ds))
+                    self.creators[0].backward(self.grad.expand(dim, self.creators[0].data.shape[dim]))
 
                 if "expand" in self.creation_op:
                     dim = int(self.creation_op.split("_")[1])
@@ -113,8 +111,8 @@ class Tensor (object):
 
                 if self.creation_op == "index_select":
                     new_grad = np.zeros_like(self.creators[0].data)
-                    indices_ = self.index_select_indices.data.flatten() # преобразование индексов в плоский вектор
-                    grad_ = grad.data.reshape(len(indices_), -1) # свораичиваем гадиент в простой список строк
+                    indices_ = self.index_select_indices.data.flatten()  # преобразование индексов в плоский вектор
+                    grad_ = grad.data.reshape(len(indices_), -1)  # свораичиваем гадиент в простой список строк
 
                     #  на данном моменте индексы indices_ и grad_ будут иметь соответсвующий порядок
 
@@ -126,14 +124,14 @@ class Tensor (object):
                     dx = self.softmax_output - self.target_dist
                     self.creators[0].backward(Tensor(dx))
 
-
     # реализация метода сложения
     def __add__(self, other):
         if self.autograd and other.autograd:
-            return Tensor(self.data + other.data, autograd=True,
+            return Tensor(self.data + other.data,
+                          autograd=True,
                           creators=[self, other],
-                          creation_op='add')
-        return Tensor(self.data + other.data, creators=[self,other], creation_op='add')
+                          creation_op="add")
+        return Tensor(self.data + other.data)
 
     # реализация метода отрицания (negative)
     def __neg__(self):
@@ -168,7 +166,7 @@ class Tensor (object):
             return Tensor(self.data.sum(dim),
                           autograd=True,
                           creators=[self],
-                          creation_op="sum_" + str(dim),)
+                          creation_op="sum_" + str(dim))
         return Tensor(self.data.sum(dim))
 
     # реализация метода расширения
@@ -176,9 +174,7 @@ class Tensor (object):
 
         trans_cmd = list(range(0, len(self.data.shape)))
         trans_cmd.insert(dim, len(self.data.shape))
-        new_shape = list(self.data.shape) + [copies]
-        new_data = self.data.repeat(copies).reshape(new_shape)
-        new_data = new_data.transpose(trans_cmd)
+        new_data = self.data.repeat(copies).reshape(list(self.data.shape) + [copies]).transpose(trans_cmd)
 
         if self.autograd:
             return Tensor(new_data,
@@ -194,6 +190,7 @@ class Tensor (object):
                           autograd=True,
                           creators=[self],
                           creation_op="transpose")
+
         return Tensor(self.data.transpose())
 
     # реализация матричного умножения
@@ -212,9 +209,8 @@ class Tensor (object):
             return Tensor(1 / (1 + np.exp(-self.data)),
                           autograd=True,
                           creators=[self],
-                          creation_op='sigmoid')
+                          creation_op="sigmoid")
         return Tensor(1 / (1 + np.exp(-self.data)))
-
 
     def tanh(self):
         if self.autograd:
@@ -233,7 +229,6 @@ class Tensor (object):
                          creation_op="index_select")
             new.index_select_indices = indices
             return new
-
         return Tensor(self.data[indices.data])
 
     def cross_entropy(self, target_indices):
@@ -262,7 +257,7 @@ class Tensor (object):
     def softmax(self):
         temp = np.exp(self.data)
         softmax_output = temp / np.sum(temp,
-                                       axis=len(self.data.shape)-1,
+                                       axis=len(self.data.shape) - 1,
                                        keepdims=True)
         return softmax_output
 
@@ -272,9 +267,10 @@ class Tensor (object):
     def __str__(self):
         return str(self.data.__str__())
 
-class SGD (object):
 
-    def __init__(self, parameters, alpha = 0.1):
+class SGD(object):
+
+    def __init__(self, parameters, alpha=0.1):
         self.parameters = parameters
         self.alpha = alpha
 
@@ -283,37 +279,51 @@ class SGD (object):
             p.grad.data *= 0
 
     def step(self, zero=True):
+
         for p in self.parameters:
+
             p.data -= p.grad.data * self.alpha
 
             if zero:
                 p.grad.data *= 0
 
-class Layer (object):
+
+class Layer(object):
     def __init__(self):
         self.parameters = list()
 
     def get_parameters(self):
         return self.parameters
 
+
 class Linear(Layer):
 
     def __init__(self, n_inputs, n_outputs, bias=True):
         super().__init__()
-        W = np.random.randn(n_inputs, n_outputs) * np.sqrt(2.0 / n_inputs)
+
+        self.use_bias = bias
+
+        W = np.random.randn(n_inputs, n_outputs) * np.sqrt(2.0/(n_inputs))
         self.weight = Tensor(W, autograd=True)
-        self.bias = Tensor(np.zeros(n_outputs), autograd=True)
+        if self.use_bias:
+            self.bias = Tensor(np.zeros(n_outputs), autograd=True)
 
         self.parameters.append(self.weight)
-        self.parameters.append(self.bias)
+
+        if self.use_bias:
+            self.parameters.append(self.bias)
 
     def forward(self, input):
-        return input.mm(self.weight) + self.bias.expand(0, len(input.data))
+        if self.use_bias:
+            return input.mm(self.weight)+self.bias.expand(0,len(input.data))
+        return input.mm(self.weight)
+
 
 class Sequential(Layer):
 
     def __init__(self, layers=list()):
         super().__init__()
+
         self.layers = layers
 
     def add(self, layer):
@@ -330,12 +340,13 @@ class Sequential(Layer):
             params += l.get_parameters()
         return params
 
-class MSELoss (Layer):
+class MSELoss(Layer):
     def __init__(self):
         super().__init__()
 
     def forward(self, pred, target):
         return ((pred - target) * (pred - target)).sum(0)
+
 
 class Tanh(Layer):
     def __init__(self):
@@ -344,12 +355,15 @@ class Tanh(Layer):
     def forward(self, input):
         return input.tanh()
 
+
 class Sigmoid(Layer):
     def __init__(self):
         super().__init__()
 
     def forward(self, input):
         return input.sigmoid()
+
+
 
 class Embedding(Layer):
 
@@ -359,13 +373,13 @@ class Embedding(Layer):
         self.vocab_size = vocab_size
         self.dim = dim
 
-        weight = (np.random.rand(vocab_size, dim) - 0.5) / dim
-        self.weight = Tensor(weight, autograd=True)
+        self.weight = Tensor((np.random.rand(vocab_size, dim) - 0.5) / dim, autograd=True)
 
         self.parameters.append(self.weight)
 
     def forward(self, input):
         return self.weight.index_select(input)
+
 
 class CrossEntropyLoss(object):
 
@@ -375,25 +389,25 @@ class CrossEntropyLoss(object):
     def forward(self, input, target):
         return input.cross_entropy(target)
 
+
 class RNNCell(Layer):
-    def __init__(self, n_input, n_hidden, n_output, activation='sigmoid'):
+    def __init__(self, n_inputs, n_hidden, n_output, activation='sigmoid'):
         super().__init__()
 
-        self.n_input = n_input
+        self.n_inputs = n_inputs
         self.n_hidden = n_hidden
         self.n_output = n_output
 
         if activation == 'sigmoid':
             self.activation = Sigmoid()
         elif activation == 'tanh':
-            self.activation = Tanh()
+            self.activation == Tanh()
         else:
             raise Exception("Non-linearity not found")
 
-        self.w_ih = Linear(n_input, n_hidden)
+        self.w_ih = Linear(n_inputs, n_hidden)
         self.w_hh = Linear(n_hidden, n_hidden)
         self.w_ho = Linear(n_hidden, n_output)
-
 
         self.parameters += self.w_ih.get_parameters()
         self.parameters += self.w_hh.get_parameters()
@@ -404,11 +418,11 @@ class RNNCell(Layer):
         combined = self.w_ih.forward(input) + from_prev_hidden
         new_hidden = self.activation.forward(combined)
         output = self.w_ho.forward(new_hidden)
-
         return output, new_hidden
 
-    def init_hidden(self, batch_size):
-        return Tensor(np.zeros((batch_size, self.n_hidden)), autograd=True)
+    def init_hidden(self, batch_size=1):
+        return Tensor(np.zeros((batch_size,self.n_hidden)), autograd=True)
+
 
 # слой долгой краткосрочной памяти
 class LSTMCell(Layer):
@@ -450,7 +464,6 @@ class LSTMCell(Layer):
         self.parameters += self.w_ho.get_parameters()
 
     def forward(self, input, hidden):
-
         prev_hidden = hidden[0]
         prev_cell = hidden[1]
 
@@ -471,9 +484,9 @@ class LSTMCell(Layer):
 
         return output, (hidden, cell)
 
-    def init_hidden(self, batch_size = 1):
-        init_hidden = Tensor(np.zeros((batch_size,self.n_hidden)), autograd=True)
-        init_cell = Tensor(np.zeros((batch_size,self.n_hidden)), autograd=True)
-        init_hidden.data[:,0] += 1
-        init_cell.data[:,0] += 1
+    def init_hidden(self, batch_size=1):
+        init_hidden = Tensor(np.zeros((batch_size, self.n_hidden)), autograd=True)
+        init_cell = Tensor(np.zeros((batch_size, self.n_hidden)), autograd=True)
+        init_hidden.data[:, 0] += 1
+        init_cell.data[:, 0] += 1
         return (init_hidden, init_cell)
